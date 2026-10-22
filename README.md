@@ -40,6 +40,7 @@ consolidation is transparent to an application that is set up for it.
 | Spread across nodes (hard) and zones (soft) | one node's drain never takes every replica |
 | Karpenter nodes only | so Karpenter provisions, drifts and consolidates them |
 | Readiness every 2s, `preStop` sleep 10s | a terminating pod leaves the endpoints before it stops serving |
+| Readiness starts after 25s | on a new node, the pod would be Ready before that node's ztunnel — the 503s of the first disruption test |
 | `maxUnavailable: 0` rollout, `minReadySeconds: 5` | updates never drop below three ready |
 | memory `requests == limits` | Karpenter packs by requests |
 | `loadgen` through the platform gateway | a disruption shows up as failed requests |

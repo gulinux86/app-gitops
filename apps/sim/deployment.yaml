@@ -82,10 +82,23 @@ spec:
 
           # Readiness is what takes a terminating pod out of the Service; a fast
           # period shortens the window in which it still receives requests.
+          #
+          # initialDelaySeconds holds a new pod out of the Service for its first
+          # 25s. On a node Karpenter just launched, the pod is otherwise Ready
+          # before that node's ztunnel and istio-cni are, and the requests sent to
+          # it in between fail with 503 — measured on hml: ztunnel came up 8-17s
+          # after the app on each replacement node, and all six failures of a
+          # disruption test fell in that gap. 25s covers the slowest with margin.
+          #
+          # A delay is a stand-in for the real signal, and it slows every rollout
+          # by the same 25s. The platform-level fix is a NodePool startup taint
+          # removed once the node's data plane is Ready; it needs a component with
+          # cluster-wide `nodes/patch`, and was deferred for that reason.
           readinessProbe:
             httpGet:
               path: /readyz
               port: http
+            initialDelaySeconds: 25
             periodSeconds: 2
             failureThreshold: 1
           livenessProbe:

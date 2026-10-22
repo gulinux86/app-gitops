@@ -1,0 +1,23 @@
+# The contract with every voluntary disruption: at most one replica down at a time.
+#
+# EKS's node-group roll and Karpenter's drift both evict through this — an eviction
+# that would break it is refused and retried, so a drain waits for a replacement to
+# become Ready elsewhere before taking the next pod.
+#
+# maxUnavailable rather than minAvailable: it keeps meaning "one at a time" if the
+# replica count changes. A PDB that allows zero disruptions (maxUnavailable: 0, or
+# minAvailable equal to replicas) would hang every drain — eks-upgrade's preflight
+# blocks on exactly that.
+#
+# It does not cover involuntary loss: a Spot reclaim or a node failure. Those are
+# what the replica count and the spread across nodes are for.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sim
+  namespace: app-sim
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: sim

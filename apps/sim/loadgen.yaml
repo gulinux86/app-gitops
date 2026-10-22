@@ -1,0 +1,84 @@
+# Steady traffic through the whole path — gateway, mesh, Service, pod — so a
+# disruption shows up as failed requests instead of being inferred from pod events.
+#
+# Every request is logged only when it fails; a summary line is printed every 10s:
+#
+#   kubectl -n app-sim logs deploy/loadgen -f
+#   kubectl -n app-sim logs deploy/loadgen | grep FAIL
+#
+# A transparent node roll is one in which the FAIL lines never appear.
+#
+# It is also what gives Kiali something to draw: its graph comes from counters that
+# only move while requests flow.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: app-sim
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      # Kept off Karpenter's nodes, so the observer is not evicted together with
+      # what it observes. It still moves when the system node group rolls; its
+      # counters restart then, the log of the old pod keeps what it saw.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: karpenter.sh/nodepool
+                    operator: DoesNotExist
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100 # curl_user in the image
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: curl
+          image: curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
+          env:
+            # Through the gateway's in-cluster Service, not straight to app-sim's:
+            # the route, the gateway and its endpoint updates are part of what a
+            # node roll can break.
+            - name: URL
+              value: http://platform-gateway-istio.istio-ingress.svc.cluster.local/sim/
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ok=0 fail=0 total_ok=0 total_fail=0 last=$(date +%s)
+              echo "$(date -u +%FT%TZ) start url=$URL"
+              while true; do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "$URL") || true
+                if [ "$code" = 200 ]; then
+                  ok=$((ok + 1))
+                else
+                  fail=$((fail + 1))
+                  echo "$(date -u +%FT%TZ) FAIL code=$code"
+                fi
+                now=$(date +%s)
+                if [ $((now - last)) -ge 10 ]; then
+                  total_ok=$((total_ok + ok)) total_fail=$((total_fail + fail))
+                  echo "$(date -u +%FT%TZ) ok=$ok fail=$fail total_ok=$total_ok total_fail=$total_fail"
+                  ok=0 fail=0 last=$now
+                fi
+                sleep 0.1
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

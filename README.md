@@ -15,18 +15,18 @@ Argo CD syncs it under the `apps` `AppProject`, which Terraform owns:
 
 So an application here cannot create its own namespace, join the mesh, or attach to
 the gateway on its own. Those are the platform's decisions, made in
-`platform-gitops/apps/`: one file per application holding its `Namespace` (with the
+`platform-gitops/tenants/`: one file per application holding its `Namespace` (with the
 mesh and gateway labels) and its `Application`, which points back here.
 
 ```
-platform-gitops/apps/11-app-sim.yaml      Namespace app-sim + Application
+platform-gitops/tenants/app-sim.yaml      Namespace app-sim + Application
         │
         ▼
 app-gitops/apps/sim/                      Deployment, Service, PDB, HTTPRoute, …
 ```
 
 Adding an application is therefore two changes: its manifests here, and its entry
-in `platform-gitops/apps/`.
+in `platform-gitops/tenants/`.
 
 ## `apps/sim` — disruption test
 

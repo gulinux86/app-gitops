@@ -57,6 +57,13 @@ A transparent roll is one with `fail=0` throughout. `loadgen` itself runs on the
 system node group, so it is replaced once while that group rolls and its counters
 restart. `logs -f` ends with the old pod; run it again to follow the new one.
 
+`loadgen` is the live view, from inside the cluster through the gateway's Service.
+The measurement of record is `eks-upgrade`'s own probe in `eks-terraform`: a loop on
+the bastion requesting `/sim/` through the internal ALB — the path a client takes —
+for the whole run, reported per phase in the run summary. It does not restart when a
+node group rolls. On the hml 1.35 → 1.36 rehearsal: 6,826 requests, none failed.
+Renaming this route means changing that workflow's `probe-path` input too.
+
 ## Rules
 
 Same as the platform repository: no `kind: Secret` (the repository is public), no

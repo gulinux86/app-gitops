@@ -1,0 +1,94 @@
+# Defaults for every service. An application's values file sets what is its own —
+# image, port, route, resources — and leaves the rest, which is what eks-upgrade in
+# eks-terraform holds every workload to before it moves a node.
+#
+# values.schema.json enforces the parts that are not a matter of taste: two or more
+# replicas, an image pinned by digest, memory limit equal to its request.
+
+# Resource names and the pod selector. Defaults to the Helm release name, which Argo
+# CD sets from the Application (`helm.releaseName`). The selector is immutable on a
+# live Deployment: renaming a service means replacing it.
+name: ""
+
+# Three with the PDB allowing one out: a drain always leaves two serving. Two is the
+# floor the schema allows — with two, a drain leaves one, and a Spot reclaim during
+# it leaves none.
+replicas: 3
+
+# Tag for the reader, digest for the cluster: a tag can be moved.
+image: ""
+
+# Replace the image's entrypoint and arguments; empty keeps them.
+command: []
+args: []
+env: []
+
+port: 8080
+
+# The path the platform gateway routes to this service. Matched as a prefix and
+# stripped before the request reaches the pod, unless `rewrite` is false.
+route:
+  path: ""
+  rewrite: true
+  # The shared gateway, provisioned by platform-gitops. A route attaches only from a
+  # namespace the platform labelled `gateway-access: "true"`.
+  gateway:
+    name: platform-gateway
+    namespace: istio-ingress
+
+# Readiness is what takes a terminating pod out of the Service; a short period
+# shortens the window in which it still receives requests.
+#
+# initialDelaySeconds 25 holds a new pod out of the Service for its first 25s. On a
+# node Karpenter just launched, the pod is otherwise Ready before that node's
+# ztunnel and istio-cni are, and requests sent to it in between fail with 503 —
+# measured on hml: ztunnel came up 8-17s after the application on each replacement
+# node. 25s covers the slowest with margin. It is a stand-in for the real signal (a
+# NodePool startup taint removed once the node's data plane is Ready, which needs a
+# component with cluster-wide `nodes/patch`) and slows every rollout by the same 25s.
+readiness:
+  path: /readyz
+  initialDelaySeconds: 25
+  periodSeconds: 2
+  failureThreshold: 1
+
+liveness:
+  path: /healthz
+  periodSeconds: 10
+
+# SIGTERM and endpoint removal race: the kubelet signals the container while the
+# Service, the gateway and ztunnel are still learning the pod is going. Sleeping
+# first lets them catch up. The native sleep action needs no shell in the image.
+preStopSeconds: 10
+
+# Must exceed preStopSeconds plus the application's own shutdown.
+terminationGracePeriodSeconds: 30
+
+# A new pod must stay Ready this long to count, so one that passes its first probe
+# and then crashes does not let a rollout or a drain move on.
+minReadySeconds: 5
+
+# Memory request equals its limit (the schema checks it): Karpenter packs by
+# requests, and a pod that grows past its request can land on a node that cannot
+# hold it. No CPU limit — throttling a pod that fits is all it would do.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 64Mi
+
+# Karpenter's nodes only. The system node group runs the platform — the Load
+# Balancer Controller among it — and is rolled in the upgrade's second phase;
+# applications move in the last.
+karpenterNodesOnly: true
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Writable directories under a read-only root filesystem, as emptyDir volumes:
+#   - name: data
+#     mountPath: /data
+writableDirs: []

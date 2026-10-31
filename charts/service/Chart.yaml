@@ -1,0 +1,9 @@
+apiVersion: v2
+name: service
+description: >-
+  An HTTP service behind the platform gateway, shaped to survive a node roll —
+  replicas spread across nodes, a PDB, readiness and drain timing the EKS upgrade
+  depends on. An application supplies its image, port and route; the rest is the
+  platform's default.
+type: application
+version: 0.1.0

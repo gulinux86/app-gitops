@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["image", "port", "route", "replicas", "resources"],
+  "properties": {
+    "name": { "type": "string", "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$" },
+    "replicas": {
+      "type": "integer",
+      "minimum": 2,
+      "description": "One replica is down from eviction until its replacement is Ready; eks-upgrade's strict mode refuses it"
+    },
+    "image": {
+      "type": "string",
+      "pattern": "@sha256:[a-f0-9]{64}$",
+      "description": "Pinned by digest: a tag can be moved"
+    },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "route": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^/[A-Za-z0-9/_.-]*$" },
+        "rewrite": { "type": "boolean" }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "properties": {
+        "initialDelaySeconds": { "type": "integer", "minimum": 0 },
+        "periodSeconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "preStopSeconds": { "type": "integer", "minimum": 1 },
+    "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+    "resources": {
+      "type": "object",
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": { "type": "object", "required": ["cpu", "memory"] },
+        "limits": { "type": "object", "required": ["memory"] }
+      }
+    }
+  }
+}

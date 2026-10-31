@@ -1,0 +1,20 @@
+# At most one replica down to a voluntary disruption — an EKS node-group roll, a
+# Karpenter drift or consolidation. maxUnavailable rather than minAvailable: it
+# keeps meaning "one at a time" when the replica count changes, and never becomes a
+# PDB allowing zero disruptions, which would hang every drain.
+#
+# AlwaysAllow: a pod that is running but not Ready (crash-looping, stuck) can be
+# evicted even when the budget is spent. It is serving nothing, and without this it
+# would hold its node draining until Karpenter's grace period runs out.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "service.name" . }}
+  labels:
+    {{- include "service.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      {{- include "service.selector" . | nindent 6 }}

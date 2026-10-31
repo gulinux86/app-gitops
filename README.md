@@ -22,11 +22,53 @@ mesh and gateway labels) and its `Application`, which points back here.
 platform-gitops/tenants/app-sim.yaml      Namespace app-sim + Application
         │
         ▼
-app-gitops/apps/sim/                      Deployment, Service, PDB, HTTPRoute, …
+app-gitops/charts/service/                Deployment, Service, PDB, HTTPRoute
+          + apps/sim/values.yaml          what is the application's own
+          + apps/sim/manifests/           anything that is not a service
 ```
 
-Adding an application is therefore two changes: its manifests here, and its entry
-in `platform-gitops/tenants/`.
+Adding an application is therefore two changes: its values here, and its entry in
+`platform-gitops/tenants/`.
+
+## `charts/service` — the shape every service gets
+
+An HTTP service behind the platform gateway. The application states its image,
+port, route and resources; the chart supplies what an EKS upgrade depends on, the
+things that are easy to forget and only show as failed requests during a node roll:
+
+| Default | Why |
+|---|---|
+| 3 replicas, PDB `maxUnavailable: 1`, `unhealthyPodEvictionPolicy: AlwaysAllow` | a drain always leaves two serving; a stuck pod never holds its node |
+| Spread across nodes (hard) and zones (soft), counting only the current ReplicaSet | one node's drain never takes every replica |
+| Karpenter nodes only | the system node group runs the platform and rolls first; applications move last |
+| Readiness every 2s, after 25s; `preStop` sleep 10s | a new pod waits for its node's ztunnel; a terminating one leaves the endpoints before it stops serving |
+| Rollout `maxUnavailable: 0`, `minReadySeconds: 5` | updates never drop below the replica count |
+| Non-root, read-only root filesystem, no capabilities | writable directories are declared (`writableDirs`) |
+
+`values.schema.json` and the templates refuse what would break that, at render time —
+before Argo CD applies anything: fewer than two replicas, an image without a
+digest, a memory request different from its limit, a `preStop` the grace period
+would cut short, a missing route.
+
+A new service:
+
+```yaml
+# apps/orders/values.yaml
+image: ghcr.io/example/orders:1.4.0@sha256:<digest>
+port: 8080
+route:
+  path: /orders
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { memory: 128Mi }
+```
+
+and its tenant in `platform-gitops/tenants/`, a copy of `app-sim.yaml` with the name
+changed. Check the render locally:
+
+```bash
+helm template orders charts/service -f apps/orders/values.yaml -n app-orders
+```
 
 ## `apps/sim` — disruption test
 
@@ -34,16 +76,12 @@ A workload built to survive voluntary disruption, plus a load generator that
 proves it did. It exists to show an EKS upgrade, a Karpenter drift or a
 consolidation is transparent to an application that is set up for it.
 
-| Piece | Why |
-|---|---|
-| 3 replicas, `maxUnavailable: 1` PDB | a drain always leaves two serving |
-| Spread across nodes (hard) and zones (soft) | one node's drain never takes every replica |
-| Karpenter nodes only | so Karpenter provisions, drifts and consolidates them |
-| Readiness every 2s, `preStop` sleep 10s | a terminating pod leaves the endpoints before it stops serving |
-| Readiness starts after 25s | on a new node, the pod would be Ready before that node's ztunnel — the 503s of the first disruption test |
-| `maxUnavailable: 0` rollout, `minReadySeconds: 5` | updates never drop below three ready |
-| memory `requests == limits` | Karpenter packs by requests |
-| `loadgen` through the platform gateway | a disruption shows up as failed requests |
+It is `charts/service` with podinfo's image, port and `/sim` route
+(`apps/sim/values.yaml`) — every row of the table above, nothing added. The 25s
+readiness delay is the one that came from here: the first disruption test lost six
+requests to pods Ready before their node's ztunnel. `loadgen`
+(`apps/sim/manifests/`) sends requests through the platform gateway so a disruption
+shows up as failed requests.
 
 Watch it during an upgrade:
 

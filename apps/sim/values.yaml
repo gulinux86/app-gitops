@@ -1,0 +1,28 @@
+# The disruption-test application: podinfo behind /sim/, on the platform defaults
+# from charts/service — three replicas, spread, PDB, readiness after 25s, preStop.
+# What is set here is only what is podinfo's own.
+image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
+command:
+  - ./podinfo
+  - --port=9898
+  - --level=info
+port: 9898
+
+# eks-upgrade's probe requests /sim/ through the ALB; renaming this route means
+# changing that workflow's `probe-path` input too.
+route:
+  path: /sim
+
+# The image's user is named ("app"), and runAsNonRoot cannot verify a name; 100:101
+# is that user in the image's /etc/passwd.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 100
+  runAsGroup: 101
+  seccompProfile:
+    type: RuntimeDefault
+
+# podinfo's --data-path; the root filesystem is read-only.
+writableDirs:
+  - name: data
+    mountPath: /data

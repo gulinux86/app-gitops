@@ -64,7 +64,8 @@ resources:
 ```
 
 and its tenant in `platform-gitops/tenants/`, a copy of `app-sim.yaml` with the name
-changed. Check the render locally:
+changed. CI renders it on the pull request (see [CI](#ci)); to check before
+pushing:
 
 ```bash
 helm template orders charts/service -f apps/orders/values.yaml -n app-orders
@@ -107,3 +108,29 @@ Renaming this route means changing that workflow's `probe-path` input too.
 Same as the platform repository: no `kind: Secret` (the repository is public), no
 `type: LoadBalancer` or `Ingress` (a controller-created load balancer never enters
 Terraform state), and every image pinned by digest.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request into `main`, with no path
+filters so each job can be a required check:
+
+| Job | What fails it |
+|---|---|
+| `validate` | a values file the chart's schema or guards reject (`helm lint --strict`, `helm template`); an object the Kubernetes or CRD schemas reject (`kubeconform -strict`); a Secret, Ingress or LoadBalancer Service; an image not pinned by digest; two HTTPRoutes on the same path; an image its registry does not have; an image that runs as a named or root user with no `runAsUser` set |
+| `diff` | nothing — it comments on the pull request with the rendered diff against `main`, so a review sees what Argo CD will apply |
+| `lint` | actionlint on the workflows, shellcheck on the scripts |
+
+Releases and namespaces follow the layout: `apps/<app>/values.yaml` is release `<app>`
+in `app-<app>`; `apps/<app>/<svc>/values.yaml` is release `<app>-<svc>` in the same
+namespace. The tenant in `platform-gitops` must use the same names; its CI checks that.
+
+The same checks locally (helm and PyYAML; `--registry` also needs
+[crane](https://github.com/google/go-containerregistry/tree/main/cmd/crane)):
+
+```bash
+./scripts/ci/render.sh /tmp/rendered
+python3 scripts/ci/check.py /tmp/rendered --registry
+```
+
+Images from a private registry need its credentials in CI before `--registry` can
+read them; every image here is public today.

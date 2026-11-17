@@ -1,0 +1,171 @@
+# Fails a pull request whose applications would not sync, before it reaches main.
+#
+# Without it, the chart's schema and guards ran in exactly one place: Argo CD,
+# after the merge. A values file with a tag instead of a digest, or a memory limit
+# different from its request, reached main and showed up as a sync error.
+#
+#   validate  render every application as Argo CD will, check the result against the
+#             Kubernetes and CRD schemas, then this repository's rules and the images
+#             in their registries (scripts/ci/)
+#   diff      comment on the pull request with what changes in the rendered output —
+#             the effect of a values change, which is what a reviewer needs to see
+#   lint      actionlint on the workflows, shellcheck on the scripts
+#
+# No path filters. Every job is meant to be a required check, and a required check
+# that a path filter skipped never reports, which blocks the merge for good.
+name: ci
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The newest Kubernetes schema set kubeconform's catalog publishes; the cluster
+  # runs a later minor, and the kinds rendered here are the same in both.
+  KUBERNETES_SCHEMA_VERSION: 1.34.12
+  # CRD schemas (HTTPRoute) from a pinned commit of the community catalog.
+  CRD_SCHEMAS: https://raw.githubusercontent.com/datreeio/CRDs-catalog/3eb90d47aba8d61919d4419dd38301536e32a94b/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+  ACTIONLINT_VERSION: 1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+  SHELLCHECK_VERSION: v0.11.0
+  SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - name: Install tools
+        run: ./scripts/ci/install-tools.sh
+
+      - name: Render — schema and chart guards
+        run: ./scripts/ci/render.sh "$RUNNER_TEMP/rendered"
+
+      - name: Kubernetes and CRD schemas
+        run: |
+          kubeconform -strict -summary -output text \
+            -kubernetes-version "$KUBERNETES_SCHEMA_VERSION" \
+            -schema-location default -schema-location "$CRD_SCHEMAS" \
+            "$RUNNER_TEMP/rendered"
+
+      - name: Repository rules and images
+        run: python3 scripts/ci/check.py "$RUNNER_TEMP/rendered" --registry
+
+  diff:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The comment. A pull request from a fork gets a read-only token, so the step
+      # that posts it is skipped there and the diff goes to the job summary only.
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Install tools
+        run: ./scripts/ci/install-tools.sh
+
+      # Both sides rendered by this branch's script, so the first pull request that
+      # adds it can still be compared with a base that has none. A base that does not
+      # render compares as empty: everything shows as added.
+      - name: Render base and head
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          SCRIPT="$PWD/scripts/ci/render.sh"
+          "$SCRIPT" "$RUNNER_TEMP/head" >/dev/null || true
+          git worktree add -q "$RUNNER_TEMP/base-src" "$BASE_SHA"
+          (cd "$RUNNER_TEMP/base-src" && "$SCRIPT" "$RUNNER_TEMP/base" >/dev/null) || true
+          mkdir -p "$RUNNER_TEMP/base" "$RUNNER_TEMP/head"
+          cd "$RUNNER_TEMP"
+          # diff exits 1 when the sides differ; only 2 is a failure.
+          RC=0
+          diff -ruN base head >diff.txt || RC=$?
+          [ "$RC" -le 1 ] || exit "$RC"
+          wc -l <diff.txt
+
+      - name: Write the comment
+        run: |
+          set -euo pipefail
+          DIFF="$RUNNER_TEMP/diff.txt"
+          {
+            echo "<!-- render-diff -->"
+            echo "### Rendered changes"
+            if [ ! -s "$DIFF" ]; then
+              echo "No change to what Argo CD will apply."
+            else
+              echo
+              echo '```diff'
+              # A comment holds 65,536 characters.
+              head -c 60000 "$DIFF"
+              echo
+              echo '```'
+              [ "$(wc -c <"$DIFF")" -le 60000 ] || echo "_Truncated: the full diff is in the job summary._"
+            fi
+          } >"$RUNNER_TEMP/comment.md"
+          { echo '```diff'; cat "$DIFF"; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+
+      # One comment per pull request, updated on every push rather than added to.
+      - name: Post or update the comment
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            -q '.[] | select(.body | startswith("<!-- render-diff -->")) | .id' | head -n1)
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$ID" -F body=@"$RUNNER_TEMP/comment.md" >/dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@"$RUNNER_TEMP/comment.md" >/dev/null
+          fi
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - name: Install shellcheck
+        run: |
+          set -euo pipefail
+          TARBALL="shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          curl -sSfLo "/tmp/$TARBALL" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${TARBALL}"
+          echo "${SHELLCHECK_SHA256}  /tmp/${TARBALL}" | sha256sum -c -
+          tar -xJf "/tmp/$TARBALL" -C /tmp
+          sudo install "/tmp/shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          TARBALL="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfLo "/tmp/$TARBALL" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${TARBALL}"
+          echo "${ACTIONLINT_SHA256}  /tmp/${TARBALL}" | sha256sum -c -
+          tar -xzf "/tmp/$TARBALL" -C /tmp actionlint
+          sudo install /tmp/actionlint /usr/local/bin/actionlint
+
+      - name: shellcheck — scripts
+        run: |
+          set -euo pipefail
+          mapfile -t SCRIPTS < <(git ls-files '*.sh')
+          shellcheck "${SCRIPTS[@]}"
+
+      - name: actionlint — workflows, and shellcheck on their run blocks
+        run: actionlint -color

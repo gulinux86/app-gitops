@@ -28,6 +28,12 @@ What the schema cannot express: relations between values.
 {{- if and .Values.autoscaling.enabled (lt (int .Values.autoscaling.maxReplicas) (int .Values.autoscaling.minReplicas)) -}}
 {{- fail (printf "autoscaling: maxReplicas (%v) must be at least minReplicas (%v)" .Values.autoscaling.maxReplicas .Values.autoscaling.minReplicas) -}}
 {{- end -}}
+{{- $own := printf "apps/%s/" (trimPrefix "app-" .Release.Namespace) -}}
+{{- range .Values.secrets -}}
+{{- if not (hasPrefix $own .key) -}}
+{{- fail (printf "secrets: %s reads %q, outside %s — the only prefix the cluster admits for this application" .env .key $own) -}}
+{{- end -}}
+{{- end -}}
 {{- if le (int .Values.terminationGracePeriodSeconds) (int .Values.preStopSeconds) -}}
 {{- fail (printf "terminationGracePeriodSeconds (%v) must exceed preStopSeconds (%v), or the kubelet kills the container mid-sleep" .Values.terminationGracePeriodSeconds .Values.preStopSeconds) -}}
 {{- end -}}

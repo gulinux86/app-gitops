@@ -15,11 +15,12 @@ Argo CD syncs it under the `apps` `AppProject`, which Terraform owns:
 
 So an application here cannot create its own namespace, join the mesh, or attach to
 the gateway on its own. Those are the platform's decisions, made in
-`platform-gitops/tenants/`: one file per application holding its `Namespace` (with the
-mesh and gateway labels) and its `Application`, which points back here.
+`platform-gitops/tenants/`: one short file per application under `registry/`, from
+which the platform renders its `Namespace` (with the mesh, gateway and secrets labels)
+and its `Application`, which points back here.
 
 ```
-platform-gitops/tenants/app-sim.yaml      Namespace app-sim + Application
+platform-gitops/tenants/registry/sim.yaml  Namespace app-sim + Application
         │
         ▼
 app-gitops/charts/service/                Deployment, Service, PDB, HTTPRoute
@@ -27,8 +28,9 @@ app-gitops/charts/service/                Deployment, Service, PDB, HTTPRoute
           + apps/sim/manifests/           anything that is not a service
 ```
 
-Adding an application is therefore two changes: its values here, and its entry in
-`platform-gitops/tenants/`.
+Adding an application is therefore two changes: its values here, and its file in
+`platform-gitops/tenants/registry/`. Reading secrets adds nothing but `secrets: true`
+there — no Terraform.
 
 ## `charts/service` — the shape every service gets
 
@@ -64,13 +66,51 @@ resources:
   limits: { memory: 128Mi }
 ```
 
-and its tenant in `platform-gitops/tenants/`, a copy of `app-sim.yaml` with the name
-changed. CI renders it on the pull request (see [CI](#ci)); to check before
+and its tenant, `platform-gitops/tenants/registry/orders.yaml`:
+
+```yaml
+name: orders
+team: checkout
+gateway: true
+secrets: true     # only if it reads secrets; see below
+```
+
+CI renders it on the pull request (see [CI](#ci)); to check before
 pushing:
 
 ```bash
 helm template orders charts/service -f apps/orders/values.yaml -n app-orders
 ```
+
+### Secrets
+
+A value from AWS Secrets Manager reaches the container as an environment variable:
+
+```yaml
+# apps/orders/values.yaml
+secrets:
+  - env: DB_PASSWORD
+    key: apps/orders/db
+    property: password      # a field of a JSON secret; omit for a plain one
+```
+
+The chart renders one `ExternalSecret` through the `ClusterSecretStore` `aws`, and adds
+the resulting Secret to the container with `envFrom`. Nothing about the value is in
+Git; what is here is only where it lives.
+
+An application reads only `apps/<application>/*`: that is all the cluster admits for
+its namespace (an admission policy in platform-gitops), and the chart refuses any other
+key before it reaches the cluster. The tenant needs `secrets: true` in platform-gitops;
+no Terraform. The value itself is created in Secrets Manager — by Terraform
+for infrastructure it provisions, or by hand:
+
+```bash
+aws secretsmanager create-secret --name apps/orders/db \
+  --secret-string '{"password":"..."}'
+```
+
+A secret rotated in AWS reaches the Secret within `secretsRefreshInterval` (1h), and a
+running container on its next restart.
 
 ## `apps/sim` — disruption test
 

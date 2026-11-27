@@ -46,6 +46,20 @@
         "periodSeconds": { "type": "integer", "minimum": 1 }
       }
     },
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["env", "key"],
+        "additionalProperties": false,
+        "properties": {
+          "env": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" },
+          "key": { "type": "string", "pattern": "^apps/[a-z0-9-]+/[A-Za-z0-9/_+=.@-]+$" },
+          "property": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "secretsRefreshInterval": { "type": "string", "pattern": "^([0-9]+(s|m|h))+$" },
     "preStopSeconds": { "type": "integer", "minimum": 1 },
     "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
     "resources": {

@@ -13,7 +13,32 @@ name: ""
 # Three with the PDB allowing one out: a drain always leaves two serving. Two is the
 # floor the schema allows — with two, a drain leaves one, and a Spot reclaim during
 # it leaves none.
+#
+# Used only with autoscaling off. With it on, the Deployment carries no replica
+# count at all and the HPA's minReplicas is the floor: a count in the manifest would
+# be compared against the live one on every Argo CD sync, and selfHeal would undo
+# each scale-up the HPA made.
 replicas: 3
+
+# On by default: every service scales on CPU between minReplicas and maxReplicas.
+#
+# minReplicas is the same three as above, for the same reason, and the schema holds
+# it to two or more. CPU is a percentage of the CPU *request*, so a service whose
+# request is far from its real use scales too early or too late — size the request
+# first. Memory is not a metric: its request equals its limit (the schema checks
+# it), so a pod near its request is near being OOM-killed, and adding replicas does
+# not shrink the memory each one holds.
+#
+# Scale-up uses the HPA's defaults, which are fast. Scale-down waits five calm
+# minutes and removes one pod a minute: each removal is a pod draining through its
+# preStop sleep while the gateway and ztunnel learn it is gone, and dropping several
+# right after a spike puts the load back on fewer pods before it has passed.
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  scaleDownStabilizationSeconds: 300
 
 # Tag for the reader, digest for the cluster: a tag can be moved.
 image: ""

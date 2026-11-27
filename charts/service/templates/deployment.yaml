@@ -6,7 +6,9 @@ metadata:
   labels:
     {{- include "service.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicas }}
+  {{- end }}
   minReadySeconds: {{ .Values.minReadySeconds }}
   # Surge one, never below the replica count: an update never drops capacity.
   strategy:

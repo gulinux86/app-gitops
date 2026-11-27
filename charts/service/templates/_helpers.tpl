@@ -25,6 +25,9 @@ What the schema cannot express: relations between values.
 {{- if ne (toString .Values.resources.requests.memory) (toString .Values.resources.limits.memory) -}}
 {{- fail (printf "resources: memory request (%v) must equal its limit (%v) — Karpenter packs by requests" .Values.resources.requests.memory .Values.resources.limits.memory) -}}
 {{- end -}}
+{{- if and .Values.autoscaling.enabled (lt (int .Values.autoscaling.maxReplicas) (int .Values.autoscaling.minReplicas)) -}}
+{{- fail (printf "autoscaling: maxReplicas (%v) must be at least minReplicas (%v)" .Values.autoscaling.maxReplicas .Values.autoscaling.minReplicas) -}}
+{{- end -}}
 {{- if le (int .Values.terminationGracePeriodSeconds) (int .Values.preStopSeconds) -}}
 {{- fail (printf "terminationGracePeriodSeconds (%v) must exceed preStopSeconds (%v), or the kubelet kills the container mid-sleep" .Values.terminationGracePeriodSeconds .Values.preStopSeconds) -}}
 {{- end -}}

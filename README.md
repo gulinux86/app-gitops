@@ -39,6 +39,7 @@ things that are easy to forget and only show as failed requests during a node ro
 | Default | Why |
 |---|---|
 | 3 replicas, PDB `maxUnavailable: 1`, `unhealthyPodEvictionPolicy: AlwaysAllow` | a drain always leaves two serving; a stuck pod never holds its node |
+| HPA on CPU, 3–6 replicas at 70% of the request; scale-down one pod a minute after five calm minutes | load is absorbed without a values change; the Deployment carries no `replicas`, so Argo CD never undoes a scale-up |
 | Spread across nodes (hard) and zones (soft), counting only the current ReplicaSet | one node's drain never takes every replica |
 | Karpenter nodes only | the system node group runs the platform and rolls first; applications move last |
 | Readiness every 2s, after 25s; `preStop` sleep 10s | a new pod waits for its node's ztunnel; a terminating one leaves the endpoints before it stops serving |

@@ -6,4 +6,4 @@ description: >-
   depends on. An application supplies its image, port and route; the rest is the
   platform's default.
 type: application
-version: 0.1.0
+version: 0.2.0

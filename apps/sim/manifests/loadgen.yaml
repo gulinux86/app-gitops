@@ -15,6 +15,13 @@ kind: Deployment
 metadata:
   name: loadgen
   namespace: app-sim
+  # Out of the platform's resilience policy (platform-gitops,
+  # components/policies/workload-resilience.yaml), which requires a hostname and zone
+  # spread of every workload in an app-* namespace. This one is not a service: one
+  # replica is the point — two would double the load and split the log a node roll
+  # is read from — and nothing depends on it staying up.
+  annotations:
+    platform/resilience-exempt: "observer, not a service: one replica by design, nothing routes to it"
 spec:
   replicas: 1
   selector:

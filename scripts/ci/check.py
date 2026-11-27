@@ -128,7 +128,7 @@ def check_registry(docs, errors):
         if config.returncode != 0:
             errors.append(
                 f"{uses[0][0]} — cannot read {image} from its registry: {config.stderr.strip()} "
-                "(a wrong digest, or a private image CI has no credentials for)"
+                "(a wrong digest, or a private image CI has no credentials for — ECR images need the ECR_READ_ROLE_ARN secret)"
             )
             continue
         image_user = (json.loads(config.stdout).get("config") or {}).get("User", "")

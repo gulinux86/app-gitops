@@ -112,6 +112,19 @@ aws secretsmanager create-secret --name apps/orders/db \
 A secret rotated in AWS reaches the Secret within `secretsRefreshInterval` (1h), and a
 running container on its next restart.
 
+### Releases
+
+An application's own repository builds its image with ci-templates'
+[`service-release`](https://github.com/gulinux86/ci-templates#service-release) workflow.
+On a push to its `main` it builds, scans and pushes the image to ECR
+(`apps/<app>`, created on the first push), then opens a pull request here that changes
+one line — `image:` in `apps/<app>/values.yaml` — to the new digest. CI below validates
+it like any other change, the image read back from ECR included; merging it is the
+deploy. A newer release closes the older release pull requests of the same service.
+
+So `image:` is the one line here a pipeline writes. Everything else in a values file is
+reviewed by people.
+
 ## `apps/sim` — disruption test
 
 A workload built to survive voluntary disruption, plus a load generator that
@@ -173,5 +186,7 @@ The same checks locally (helm and PyYAML; `--registry` also needs
 python3 scripts/ci/check.py /tmp/rendered --registry
 ```
 
-Images from a private registry need its credentials in CI before `--registry` can
-read them; every image here is public today.
+Images in the account's ECR are read with the `ECR_READ_ROLE_ARN` secret (eks-terraform
+bootstrap, output `ecr_read_role_arn`), assumed through OIDC: the `validate` job logs
+crane in before `--registry` reads them. Locally, log crane in yourself:
+`aws ecr get-login-password | crane auth login <registry> -u AWS --password-stdin`.

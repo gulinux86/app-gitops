@@ -1,0 +1,11 @@
+# hello-api: the reference service (github.com/gulinux86/hello-api), on the platform
+# defaults from charts/service — three replicas, spread, PDB, HPA, probes on /healthz
+# and /readyz, port 8080. What is set here is only what is its own.
+#
+# `image:` is written by the service's release pipeline (ci-templates'
+# service-release): every push to its main opens a pull request here changing this
+# one line. Everything else is reviewed by people.
+image: 889384902110.dkr.ecr.us-east-1.amazonaws.com/apps/hello-api:b18a8f770398@sha256:2dd6805cb55c77a5eec4cded9dd572cb8f46a330a527cf8381bb698a7d175f93
+
+route:
+  path: /hello

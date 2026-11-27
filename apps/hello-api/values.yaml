@@ -5,7 +5,7 @@
 # `image:` is written by the service's release pipeline (ci-templates'
 # service-release): every push to its main opens a pull request here changing this
 # one line. Everything else is reviewed by people.
-image: 889384902110.dkr.ecr.us-east-1.amazonaws.com/apps/hello-api:b18a8f770398@sha256:2dd6805cb55c77a5eec4cded9dd572cb8f46a330a527cf8381bb698a7d175f93
+image: 889384902110.dkr.ecr.us-east-1.amazonaws.com/apps/hello-api:b1c14159dcf4@sha256:dde4e8bfb0fb65f883507b6e0b90791d08fd08b9d6fdd26b3ff304f1ee242a82
 
 route:
   path: /hello

@@ -44,11 +44,39 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The OIDC token the ECR read role is assumed with.
+      id-token: write
+    env:
+      # eks-terraform bootstrap, output ecr_read_role_arn. Empty in a pull request
+      # from a fork, which gets no secrets: images in ECR then cannot be read, and
+      # check.py says so.
+      ECR_READ_ROLE_ARN: ${{ secrets.ECR_READ_ROLE_ARN }}
+      AWS_REGION: us-east-1
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
 
       - name: Install tools
         run: ./scripts/ci/install-tools.sh
+
+      # Images built by ci-templates' service-release live in the account's private
+      # ECR, under apps/. check.py reads each image's config with crane, so crane
+      # needs a login there; public registries need none.
+      - name: AWS credentials for ECR (OIDC)
+        if: env.ECR_READ_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.ECR_READ_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log crane in to ECR
+        if: env.ECR_READ_ROLE_ARN != ''
+        run: |
+          set -euo pipefail
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          aws ecr get-login-password |
+            crane auth login "$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com" -u AWS --password-stdin
 
       - name: Render — schema and chart guards
         run: ./scripts/ci/render.sh "$RUNNER_TEMP/rendered"

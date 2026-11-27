@@ -75,6 +75,15 @@ spec:
           env:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if .Values.secrets }}
+          # Produced by the ExternalSecret in externalsecret.yaml. Until the operator
+          # has written it the container cannot start (CreateContainerConfigError)
+          # and retries on its own — a missing secret never starts the service
+          # without it.
+          envFrom:
+            - secretRef:
+                name: {{ include "service.name" . }}-secrets
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.port }}

@@ -48,6 +48,31 @@ command: []
 args: []
 env: []
 
+# Values from AWS Secrets Manager, as environment variables. Each entry becomes a key
+# of one ExternalSecret, and the Secret it produces (<name>-secrets) is added to the
+# container with envFrom:
+#
+#   secrets:
+#     - env: DB_PASSWORD          # the variable's name in the container
+#       key: apps/orders/db       # the secret's name in Secrets Manager
+#       property: password        # a field of a JSON secret; omit for a plain one
+#
+# The key must be under apps/<application>/ — the application being the namespace
+# without its app- prefix. That is all the cluster admits for it (an admission
+# policy in platform-gitops), so a key outside it would render here and be refused
+# on sync; the chart refuses it first. The secret's value never passes through Git
+# or this repository.
+#
+# Needs `secrets: true` on the tenant in platform-gitops, which lets the namespace
+# use the ClusterSecretStore `aws`. The value is read when the container
+# starts: a secret rotated in AWS reaches a running pod on its next restart, not
+# before.
+secrets: []
+
+# How often the operator re-reads each secret. An hour keeps Secrets Manager calls
+# near 720 per secret a month; a rotation is visible in the Secret within this long.
+secretsRefreshInterval: 1h
+
 port: 8080
 
 # The path the platform gateway routes to this service. Matched as a prefix and

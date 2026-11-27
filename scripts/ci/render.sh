@@ -26,7 +26,7 @@ while read -r VALUES; do
   RELEASE=${APP//\//-}
   NAMESPACE=app-${APP%%/*}
   echo "== $VALUES → release $RELEASE in $NAMESPACE"
-  if ! helm lint "$CHART" -f "$VALUES" --strict --quiet; then
+  if ! helm lint "$CHART" -f "$VALUES" --namespace "$NAMESPACE" --strict --quiet; then
     echo "::error file=$VALUES::helm lint failed for $RELEASE"
     FAIL=1
     continue

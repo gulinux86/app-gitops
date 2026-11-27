@@ -32,6 +32,11 @@ Adding an application is therefore two changes: its values here, and its file in
 `platform-gitops/tenants/registry/`. Reading secrets adds nothing but `secrets: true`
 there — no Terraform.
 
+Its code lives in its own repository, which builds and releases through ci-templates'
+`service-release` (see [Releases](#releases)). The reference is
+[`hello-api`](https://github.com/gulinux86/hello-api): its code repository,
+`apps/hello-api/values.yaml` here and `tenants/registry/hello-api.yaml` there.
+
 ## `charts/service` — the shape every service gets
 
 An HTTP service behind the platform gateway. The application states its image,
@@ -124,6 +129,14 @@ deploy. A newer release closes the older release pull requests of the same servi
 
 So `image:` is the one line here a pipeline writes. Everything else in a values file is
 reviewed by people.
+
+## `apps/hello-api` — reference service
+
+The smallest service that goes the whole way: code in
+[`gulinux86/hello-api`](https://github.com/gulinux86/hello-api), released by
+`service-release` into ECR, pinned here by its pipeline's pull requests, served at
+`/hello`. Its values file is two lines — image and route; everything else is the
+chart's defaults. A new service starts by copying it.
 
 ## `apps/sim` — disruption test
 
